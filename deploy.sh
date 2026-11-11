@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy ISPU Indonesia 2026 ke VPS (Ubuntu/Debian). Jalankan dari folder project:
-#   sudo bash deploy.sh                       -> https://polusi.skaladigital.my/id
+#   sudo bash deploy.sh                       -> https://polusi.skaladigital.my.id
 #   sudo EMAIL=kamu@mail.com bash deploy.sh   -> sekalian pasang SSL Let's Encrypt (butuh certbot)
 #   sudo PORT=8095 bash deploy.sh             -> paksa port container tertentu
 #   sudo DOMAIN=lain.com SCHEME=http bash deploy.sh
@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-HOST="${DOMAIN:-polusi.skaladigital.my}"
+HOST="${DOMAIN:-polusi.skaladigital.my.id}"
 SCHEME="${SCHEME:-https}"
 EMAIL="${EMAIL:-}"
 CSV="data/indonesia_kualitas_udara_ispu_enriched.csv"
@@ -95,8 +95,17 @@ docker compose exec -T app sh -c "
 # ---- Reverse proxy lewat Nginx yang sudah ada di VPS ----
 if [ -n "$PROXY" ]; then
     OWNER="$(ss -ltnpH '( sport = :80 )' 2>/dev/null | grep -o 'users:(("[^"]*' | head -1 | cut -d'"' -f2 || true)"
-    if [ "$OWNER" = "nginx" ] && [ -d /etc/nginx ]; then
-        if [ -d /etc/nginx/sites-available ] && [ -d /etc/nginx/sites-enabled ]; then
+    AAPANEL=""
+    NGINX_BIN="$(command -v nginx || true)"
+    if [ -d /www/server/panel/vhost/nginx ]; then
+        AAPANEL=1   # aaPanel / BT Panel: nginx di /www/server/nginx, vhost di /www/server/panel/vhost/nginx
+        [ -x /www/server/nginx/sbin/nginx ] && NGINX_BIN=/www/server/nginx/sbin/nginx
+    fi
+    if [ "$OWNER" = "nginx" ] && [ -n "$NGINX_BIN" ] && { [ -n "$AAPANEL" ] || [ -d /etc/nginx ]; }; then
+        if [ -n "$AAPANEL" ]; then
+            say "Terdeteksi aaPanel"
+            CONF="/www/server/panel/vhost/nginx/$HOST.conf"; LINK=""
+        elif [ -d /etc/nginx/sites-available ] && [ -d /etc/nginx/sites-enabled ]; then
             CONF="/etc/nginx/sites-available/$HOST.conf"; LINK="/etc/nginx/sites-enabled/$HOST.conf"
         else
             CONF="/etc/nginx/conf.d/$HOST.conf"; LINK=""
@@ -110,17 +119,19 @@ if [ -n "$PROXY" ]; then
             sed -e "s/__DOMAIN__/$HOST/g" -e "s/__PORT__/$PORT/g" -e "s/__ID__/$(echo "$HOST" | tr -c 'a-zA-Z0-9\n' '_')/g" \
                 docker/nginx/host-proxy.conf > "$CONF"
             [ -n "$LINK" ] && ln -sf "$CONF" "$LINK"
-            if nginx -t 2>/dev/null; then
-                systemctl reload nginx
+            if "$NGINX_BIN" -t 2>/dev/null; then
+                "$NGINX_BIN" -s reload
                 say "Nginx di-reload"
             else
                 warn "nginx -t gagal, vhost dibatalkan:"
-                nginx -t || true
+                "$NGINX_BIN" -t || true
                 if [ -n "$BACKUP" ]; then printf '%s\n' "$BACKUP" > "$CONF"; else rm -f "$CONF"; [ -n "$LINK" ] && rm -f "$LINK"; fi
             fi
         fi
 
-        if [ "$SCHEME" = "https" ]; then
+        if [ "$SCHEME" = "https" ] && [ -n "$AAPANEL" ]; then
+            warn "SSL belum dipasang. Pakai Cloudflare (proxy oranye, SSL Flexible), atau di aaPanel: Website > Add site $HOST, Reverse proxy ke http://127.0.0.1:$PORT, lalu tab SSL > Let's Encrypt; setelah itu hapus $CONF"
+        elif [ "$SCHEME" = "https" ]; then
             if [ -n "$EMAIL" ] && command -v certbot >/dev/null 2>&1; then
                 say "Memasang SSL Let's Encrypt untuk $HOST"
                 certbot --nginx -d "$HOST" --non-interactive --agree-tos -m "$EMAIL" --redirect \
@@ -134,5 +145,5 @@ if [ -n "$PROXY" ]; then
     fi
 fi
 
-say "Selesai! Buka: $URL/id   (cek langsung di VPS: curl -I http://127.0.0.1:$PORT/id)"
+say "Selesai! Buka: $URL   (cek langsung di VPS: curl -I http://127.0.0.1:$PORT/)"
 docker compose ps
