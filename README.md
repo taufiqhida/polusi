@@ -25,6 +25,13 @@ Aman dijalankan ulang (misalnya setelah upload versi baru).
 Halaman `/prediksi` memakai k-Nearest Neighbors murni PHP (CPU). Jalankan
 `docker compose exec app php artisan ispu:evaluate` untuk menghitung akurasi yang ditampilkan di halaman.
 
+## Evaluasi model
+Halaman `/evaluasi` berisi 5-fold cross-validation untuk baseline, Gaussian Naive Bayes, Decision Tree (CART),
+kNN, dan rumus resmi ISPU, dalam 3 skenario fitur (semua fitur, PM2.5 + cuaca, cuaca saja). Isinya:
+akurasi dan macro-F1 (± simpangan baku), MAE/RMSE/R², grafik pemilihan k, confusion matrix,
+precision/recall/F1 per kelas, dan permutation importance. Hitung ulang (beberapa menit, CPU saja):
+`docker compose exec app php artisan ispu:evaluate-models`. Nilai k terbaik otomatis dipakai halaman Prediksi.
+
 ## Update data
 Ganti CSV di `data/`, lalu jalankan:
 `docker compose exec app sh -c "php artisan ispu:import --fresh && php artisan cache:clear && php artisan ispu:evaluate"`.

@@ -25,6 +25,50 @@ class Ispu
         'Maluku' => [-3.24, 130.15], 'Papua' => [-4.27, 138.08],
     ];
 
+    /** Batas konsentrasi (µg/m³) untuk ISPU 50/100/200/300/500 (Permen LHK No. 14/2020). */
+    public const BREAKPOINTS = [
+        'pm25' => [15.5, 55.4, 150.4, 250.4, 500],
+        'pm10' => [50, 150, 350, 420, 500],
+        'so2' => [52, 180, 400, 800, 1200],
+        'co' => [4000, 8000, 15000, 30000, 45000],
+        'o3' => [120, 235, 400, 800, 1000],
+        'no2' => [80, 200, 1130, 2260, 3000],
+    ];
+
+    /**
+     * Hitung ISPU dengan rumus resmi: interpolasi linear tiap polutan, lalu ambil nilai terbesar.
+     * Polutan yang tidak ada di $r dilewati.
+     *
+     * @return array{ispu: float, dominant: string}
+     */
+    public static function fromPollutants(array $r): array
+    {
+        $levels = [0, 50, 100, 200, 300, 500];
+        $max = 0.0;
+        $dominant = '';
+        foreach (self::BREAKPOINTS as $pollutant => $bounds) {
+            if (! isset($r[$pollutant])) {
+                continue;
+            }
+            $x = (float) $r[$pollutant];
+            $sub = 500.0;
+            $lo = 0.0;
+            foreach ($bounds as $i => $hi) {
+                if ($x <= $hi) {
+                    $sub = $levels[$i] + ($levels[$i + 1] - $levels[$i]) * ($x - $lo) / ($hi - $lo);
+                    break;
+                }
+                $lo = $hi;
+            }
+            if ($sub > $max) {
+                $max = $sub;
+                $dominant = $pollutant;
+            }
+        }
+
+        return ['ispu' => $max, 'dominant' => $dominant];
+    }
+
     public static function category(float $ispu): string
     {
         return match (true) {

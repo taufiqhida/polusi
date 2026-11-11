@@ -14,11 +14,12 @@
         nav { display:flex; align-items:center; gap:24px; height:60px; }
         nav .logo { font-weight:700; font-size:18px; margin-right:auto; }
         nav a { color:#d1fae5; text-decoration:none; } nav a.active, nav a:hover { color:#fff; }
+        @media (max-width: 600px) { nav { height:auto; flex-wrap:wrap; gap:6px 16px; padding:12px 0; } nav .logo { width:100%; } }
         main { padding:24px 0 48px; }
         .notice { background:#fef3c7; border:1px solid #fcd34d; color:#78350f; padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:20px; }
         .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
         .card h2 { font-size:15px; margin:0 0 14px; }
-        .grid { display:grid; gap:16px; }
+        .grid { display:grid; gap:16px; } .grid > * { min-width:0; }
         .kpis { grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); margin-bottom:16px; }
         .kpi .label { color:var(--muted); font-size:13px; } .kpi .value { font-size:28px; font-weight:700; margin-top:4px; }
         .two { grid-template-columns: 2fr 1fr; } .half { grid-template-columns: 1fr 1fr; }
@@ -48,6 +49,7 @@
             <a href="{{ route('dashboard') }}" class="{{ request()->routeIs('dashboard') ? 'active' : '' }}">Dashboard</a>
             <a href="{{ route('records') }}" class="{{ request()->routeIs('records', 'show') ? 'active' : '' }}">Data</a>
             <a href="{{ route('predict') }}" class="{{ request()->routeIs('predict') ? 'active' : '' }}">Prediksi</a>
+            <a href="{{ route('evaluation') }}" class="{{ request()->routeIs('evaluation') ? 'active' : '' }}">Evaluasi</a>
         </nav>
     </div>
 </header>

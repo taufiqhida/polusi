@@ -59,6 +59,7 @@
                 <tr><td>Data latih / uji</td><td>{{ $metrics['train'] }} / {{ $metrics['test'] }}</td></tr>
             </table>
         @endif
+        <p style="font-size:14px;margin-top:12px"><a href="{{ route('evaluation') }}">Lihat evaluasi lengkap dan perbandingan model →</a></p>
     </div>
 </div>
 @endsection

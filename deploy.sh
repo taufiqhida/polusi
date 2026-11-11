@@ -4,6 +4,7 @@
 #   sudo NO_PULL=1 bash deploy.sh             -> tanpa git pull
 #   sudo EMAIL=kamu@mail.com bash deploy.sh   -> sekalian pasang SSL Let's Encrypt (butuh certbot)
 #   sudo PORT=8095 bash deploy.sh             -> paksa port container tertentu
+#   sudo FULL_EVAL=1 bash deploy.sh           -> hitung ulang halaman Evaluasi (5-fold CV, beberapa menit)
 #   sudo DOMAIN=lain.com SCHEME=http bash deploy.sh
 #
 # Jika port 80 sudah dipakai Nginx di VPS, container dijalankan di 127.0.0.1:8095 dan
@@ -101,6 +102,7 @@ docker compose exec -T app sh -c "
     php artisan migrate --force &&
     php artisan ispu:import &&
     php artisan cache:clear &&
+    if [ ! -f storage/app/model_eval.json ] || [ -n \"${FULL_EVAL:-}\" ]; then php artisan ispu:evaluate-models; fi &&
     php artisan ispu:evaluate &&
     chown -R www-data:www-data storage &&
     php artisan optimize

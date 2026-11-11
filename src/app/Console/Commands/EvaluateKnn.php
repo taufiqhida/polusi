@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 
 class EvaluateKnn extends Command
 {
-    protected $signature = 'ispu:evaluate {--k=15} {--test=1000 : Jumlah data uji}';
+    protected $signature = 'ispu:evaluate {--k= : Jumlah tetangga (default: k terbaik hasil ispu:evaluate-models)} {--test=1000 : Jumlah data uji}';
 
     protected $description = 'Uji akurasi model kNN dengan pembagian data latih/uji (hold-out)';
 
@@ -18,10 +18,11 @@ class EvaluateKnn extends Command
             ->select(array_merge(array_keys(KnnPredictor::FEATURES), ['ispu', 'ispu_category', 'risk_tier', 'ispa_burden']))
             ->get()->map(fn ($r) => (array) $r)->all();
 
+        $k = (int) ($this->option('k') ?: KnnPredictor::bestK());
         mt_srand(42);
         shuffle($rows);
         $test = array_splice($rows, 0, (int) $this->option('test'));
-        $model = (new KnnPredictor((int) $this->option('k')))->fit($rows);
+        $model = (new KnnPredictor($k))->fit($rows);
 
         $catOk = $tierOk = 0;
         $ispuErr = $burdenErr = 0;
@@ -37,7 +38,7 @@ class EvaluateKnn extends Command
         $bar->finish();
         $n = count($test);
         $result = [
-            'k' => (int) $this->option('k'),
+            'k' => $k,
             'train' => count($rows),
             'test' => $n,
             'category_accuracy' => round($catOk / $n, 4),

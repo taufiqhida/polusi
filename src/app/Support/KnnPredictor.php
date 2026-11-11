@@ -31,9 +31,19 @@ class KnnPredictor
 
     public function __construct(private int $k = 15) {}
 
-    /** Muat semua data dari DB (di-cache sebagai array biasa). */
-    public static function fromDatabase(int $k = 15): self
+    /** k terbaik hasil cross-validation (php artisan ispu:evaluate-models), default 15. */
+    public static function bestK(): int
     {
+        $file = storage_path('app/model_eval.json');
+        $k = is_file($file) ? (json_decode(file_get_contents($file), true)['best_k']['semua'] ?? null) : null;
+
+        return $k ? (int) $k : 15;
+    }
+
+    /** Muat semua data dari DB (di-cache sebagai array biasa). */
+    public static function fromDatabase(?int $k = null): self
+    {
+        $k ??= self::bestK();
         $rows = Cache::remember('ispu.knn.v1', 86400, fn () => DB::table('observations')
             ->select(array_merge(array_keys(self::FEATURES), ['ispu', 'ispu_category', 'risk_tier', 'ispa_burden']))
             ->get()->map(fn ($r) => (array) $r)->all());
