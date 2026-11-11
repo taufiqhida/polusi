@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 # Deploy ISPU Indonesia 2026 ke VPS (Ubuntu/Debian). Jalankan dari folder project:
-#   sudo bash deploy.sh              -> https://polusi.skaladigital.my/id, container di port 80
-#   sudo PORT=8095 bash deploy.sh    -> container di port lain (pakai reverse proxy di depannya)
+#   sudo bash deploy.sh                       -> https://polusi.skaladigital.my/id
+#   sudo EMAIL=kamu@mail.com bash deploy.sh   -> sekalian pasang SSL Let's Encrypt (butuh certbot)
+#   sudo PORT=8095 bash deploy.sh             -> paksa port container tertentu
 #   sudo DOMAIN=lain.com SCHEME=http bash deploy.sh
+#
+# Jika port 80 sudah dipakai Nginx di VPS, container dijalankan di 127.0.0.1:8095 dan
+# vhost Nginx untuk DOMAIN dibuat otomatis (file lain di Nginx tidak disentuh).
 set -euo pipefail
 cd "$(dirname "$0")"
 
-PORT="${PORT:-80}"
 HOST="${DOMAIN:-polusi.skaladigital.my}"
 SCHEME="${SCHEME:-https}"
+EMAIL="${EMAIL:-}"
 CSV="data/indonesia_kualitas_udara_ispu_enriched.csv"
 
-say() { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
+say()  { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
+warn() { printf '\n\033[1;33m!!  %s\033[0m\n' "$*"; }
 
 [ -f "$CSV" ] || { echo "CSV tidak ditemukan di $CSV"; exit 1; }
 
@@ -21,15 +26,34 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 docker compose version >/dev/null
 
+# ---- Tentukan port: 80 kalau kosong, kalau tidak 8095 di belakang reverse proxy ----
+port_busy() {  # port dipakai proses lain (bukan container web kita sendiri)?
+    local p="$1" ours
+    ours="$(docker compose port web 80 2>/dev/null | awk -F: '{print $NF}')"
+    [ "$ours" = "$p" ] && return 1
+    ss -ltnH "( sport = :$p )" 2>/dev/null | grep -q .
+}
+if [ -z "${PORT:-}" ]; then
+    if port_busy 80; then
+        PORT=8095
+        while port_busy "$PORT"; do PORT=$((PORT + 1)); done
+    else
+        PORT=80
+    fi
+fi
+if [ "$PORT" = "80" ]; then BIND="0.0.0.0"; PROXY=""; else BIND="127.0.0.1"; PROXY=1; fi
+say "Container web akan memakai $BIND:$PORT"
+
 if [ ! -f .env ]; then
     say "Membuat password database acak"
     DB_PASS="$(openssl rand -hex 16)"
     ROOT_PASS="$(openssl rand -hex 16)"
-    printf 'APP_PORT=%s\nDB_PASSWORD=%s\nDB_ROOT_PASSWORD=%s\n' "$PORT" "$DB_PASS" "$ROOT_PASS" > .env
+    printf 'APP_PORT=%s\nAPP_BIND=%s\nDB_PASSWORD=%s\nDB_ROOT_PASSWORD=%s\n' "$PORT" "$BIND" "$DB_PASS" "$ROOT_PASS" > .env
     chmod 600 .env
 else
     DB_PASS="$(grep '^DB_PASSWORD=' .env | cut -d= -f2-)"
-    sed -i "s/^APP_PORT=.*/APP_PORT=$PORT/" .env
+    sed -i -e '/^APP_PORT=/d' -e '/^APP_BIND=/d' .env
+    printf 'APP_PORT=%s\nAPP_BIND=%s\n' "$PORT" "$BIND" >> .env
 fi
 
 if [ ! -f src/.env ]; then
@@ -46,7 +70,7 @@ sed -i -e 's/^APP_NAME=.*/APP_NAME="ISPU Indonesia 2026"/' -e 's/^APP_ENV=.*/APP
     -e 's/^SESSION_DRIVER=.*/SESSION_DRIVER=file/' -e 's/^CACHE_STORE=.*/CACHE_STORE=file/' -e 's/^LOG_LEVEL=.*/LOG_LEVEL=warning/' src/.env
 
 say "Build & menjalankan container"
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 
 say "Menunggu MySQL siap"
 for i in $(seq 1 60); do
@@ -67,6 +91,48 @@ docker compose exec -T app sh -c "
     chown -R www-data:www-data storage &&
     php artisan optimize
 "
+
+# ---- Reverse proxy lewat Nginx yang sudah ada di VPS ----
+if [ -n "$PROXY" ]; then
+    OWNER="$(ss -ltnpH '( sport = :80 )' 2>/dev/null | grep -o 'users:(("[^"]*' | head -1 | cut -d'"' -f2 || true)"
+    if [ "$OWNER" = "nginx" ] && [ -d /etc/nginx ]; then
+        if [ -d /etc/nginx/sites-available ] && [ -d /etc/nginx/sites-enabled ]; then
+            CONF="/etc/nginx/sites-available/$HOST.conf"; LINK="/etc/nginx/sites-enabled/$HOST.conf"
+        else
+            CONF="/etc/nginx/conf.d/$HOST.conf"; LINK=""
+        fi
+        if [ -f "$CONF" ] && ! grep -q 'ISPU-DEPLOY' "$CONF"; then
+            warn "$CONF sudah ada dan bukan buatan script ini; tidak diubah. Pastikan isinya proxy_pass ke http://127.0.0.1:$PORT"
+        else
+            say "Memasang vhost Nginx: $CONF"
+            BACKUP=""
+            [ -f "$CONF" ] && BACKUP="$(cat "$CONF")"
+            sed -e "s/__DOMAIN__/$HOST/g" -e "s/__PORT__/$PORT/g" -e "s/__ID__/$(echo "$HOST" | tr -c 'a-zA-Z0-9\n' '_')/g" \
+                docker/nginx/host-proxy.conf > "$CONF"
+            [ -n "$LINK" ] && ln -sf "$CONF" "$LINK"
+            if nginx -t 2>/dev/null; then
+                systemctl reload nginx
+                say "Nginx di-reload"
+            else
+                warn "nginx -t gagal, vhost dibatalkan:"
+                nginx -t || true
+                if [ -n "$BACKUP" ]; then printf '%s\n' "$BACKUP" > "$CONF"; else rm -f "$CONF"; [ -n "$LINK" ] && rm -f "$LINK"; fi
+            fi
+        fi
+
+        if [ "$SCHEME" = "https" ]; then
+            if [ -n "$EMAIL" ] && command -v certbot >/dev/null 2>&1; then
+                say "Memasang SSL Let's Encrypt untuk $HOST"
+                certbot --nginx -d "$HOST" --non-interactive --agree-tos -m "$EMAIL" --redirect \
+                    || warn "certbot gagal. Pastikan DNS $HOST sudah mengarah ke IP VPS ini."
+            else
+                warn "SSL belum dipasang. Kalau tidak memakai Cloudflare, jalankan: certbot --nginx -d $HOST"
+            fi
+        fi
+    else
+        warn "Port 80 dipakai '${OWNER:-proses lain}', bukan Nginx. Arahkan $HOST secara manual ke http://127.0.0.1:$PORT"
+    fi
+fi
 
 say "Selesai! Buka: $URL/id   (cek langsung di VPS: curl -I http://127.0.0.1:$PORT/id)"
 docker compose ps
