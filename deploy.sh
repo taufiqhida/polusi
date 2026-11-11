@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Deploy ISPU Indonesia 2026 ke VPS (Ubuntu/Debian). Jalankan dari folder project:
-#   sudo bash deploy.sh                       -> https://polusi.skaladigital.my.id
+#   sudo bash deploy.sh                       -> git pull kode terbaru + jalankan https://polusi.skaladigital.my.id
+#   sudo NO_PULL=1 bash deploy.sh             -> tanpa git pull
 #   sudo EMAIL=kamu@mail.com bash deploy.sh   -> sekalian pasang SSL Let's Encrypt (butuh certbot)
 #   sudo PORT=8095 bash deploy.sh             -> paksa port container tertentu
 #   sudo DOMAIN=lain.com SCHEME=http bash deploy.sh
@@ -17,6 +18,19 @@ CSV="data/indonesia_kualitas_udara_ispu_enriched.csv"
 
 say()  { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
 warn() { printf '\n\033[1;33m!!  %s\033[0m\n' "$*"; }
+
+# ---- Ambil kode terbaru dari GitHub (konfigurasi server .env tetap aman) ----
+if [ -z "${NO_PULL:-}" ] && [ -d .git ]; then
+    say "Mengambil kode terbaru (git pull)"
+    git config --global --add safe.directory "$PWD" 2>/dev/null || true
+    BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+    [ -f .env ] && cp .env .env.deploy-backup
+    git fetch origin "$BRANCH"
+    git reset --hard "origin/$BRANCH"     # kode di server selalu sama dengan GitHub
+    [ -f .env.deploy-backup ] && mv -f .env.deploy-backup .env
+    git log -1 --format='    versi: %h %s (%cr)'
+    exec env NO_PULL=1 bash "$PWD/$(basename "$0")" "$@"     # jalankan ulang deploy.sh versi terbaru
+fi
 
 [ -f "$CSV" ] || { echo "CSV tidak ditemukan di $CSV"; exit 1; }
 
@@ -101,11 +115,20 @@ if [ -n "$PROXY" ]; then
         AAPANEL=1   # aaPanel / BT Panel: nginx di /www/server/nginx, vhost di /www/server/panel/vhost/nginx
         [ -x /www/server/nginx/sbin/nginx ] && NGINX_BIN=/www/server/nginx/sbin/nginx
     fi
-    if [ "$OWNER" = "nginx" ] && [ -n "$NGINX_BIN" ] && { [ -n "$AAPANEL" ] || [ -d /etc/nginx ]; }; then
-        if [ -n "$AAPANEL" ]; then
-            say "Terdeteksi aaPanel"
-            CONF="/www/server/panel/vhost/nginx/$HOST.conf"; LINK=""
-        elif [ -d /etc/nginx/sites-available ] && [ -d /etc/nginx/sites-enabled ]; then
+    if [ -n "$AAPANEL" ]; then
+        # Di aaPanel, domain didaftarkan lewat Website > Proxy Project (agar tampil di panel & SSL bisa diurus panel).
+        OLD="/www/server/panel/vhost/nginx/$HOST.conf"
+        if [ -f "$OLD" ] && grep -q 'ISPU-DEPLOY' "$OLD"; then
+            rm -f "$OLD" && "$NGINX_BIN" -t 2>/dev/null && "$NGINX_BIN" -s reload
+            say "Vhost lama buatan script dihapus (diganti Proxy Project aaPanel)"
+        fi
+        say "Terdeteksi aaPanel. Daftarkan domain di panel:"
+        echo "    Website > Proxy Project > Add proxy"
+        echo "      Domain        : $HOST"
+        echo "      Proxy address : http://127.0.0.1:$PORT"
+        echo "    Lalu Modify > SSL > Let's Encrypt (seperti website lain di panel)."
+    elif [ "$OWNER" = "nginx" ] && [ -n "$NGINX_BIN" ] && [ -d /etc/nginx ]; then
+        if [ -d /etc/nginx/sites-available ] && [ -d /etc/nginx/sites-enabled ]; then
             CONF="/etc/nginx/sites-available/$HOST.conf"; LINK="/etc/nginx/sites-enabled/$HOST.conf"
         else
             CONF="/etc/nginx/conf.d/$HOST.conf"; LINK=""
@@ -129,9 +152,7 @@ if [ -n "$PROXY" ]; then
             fi
         fi
 
-        if [ "$SCHEME" = "https" ] && [ -n "$AAPANEL" ]; then
-            warn "SSL belum dipasang. Pakai Cloudflare (proxy oranye, SSL Flexible), atau di aaPanel: Website > Add site $HOST, Reverse proxy ke http://127.0.0.1:$PORT, lalu tab SSL > Let's Encrypt; setelah itu hapus $CONF"
-        elif [ "$SCHEME" = "https" ]; then
+        if [ "$SCHEME" = "https" ]; then
             if [ -n "$EMAIL" ] && command -v certbot >/dev/null 2>&1; then
                 say "Memasang SSL Let's Encrypt untuk $HOST"
                 certbot --nginx -d "$HOST" --non-interactive --agree-tos -m "$EMAIL" --redirect \

@@ -1,0 +1,5 @@
+# konfigurasi per-server (password acak dibuat deploy.sh)
+.env
+.env.deploy-backup
+# paket lama, deploy sekarang lewat git
+*.tar.gz
