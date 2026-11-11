@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Deploy ISPU Indonesia 2026 ke VPS (Ubuntu/Debian). Jalankan dari folder project:
-#   sudo bash deploy.sh              -> web di port 80
-#   sudo PORT=8095 bash deploy.sh    -> web di port lain
-#   sudo DOMAIN=ispu.contoh.com bash deploy.sh
+#   sudo bash deploy.sh              -> https://polusi.skaladigital.my/id, container di port 80
+#   sudo PORT=8095 bash deploy.sh    -> container di port lain (pakai reverse proxy di depannya)
+#   sudo DOMAIN=lain.com SCHEME=http bash deploy.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 
 PORT="${PORT:-80}"
-HOST="${DOMAIN:-$(curl -fsS https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')}"
+HOST="${DOMAIN:-polusi.skaladigital.my}"
+SCHEME="${SCHEME:-https}"
 CSV="data/indonesia_kualitas_udara_ispu_enriched.csv"
 
 say() { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
@@ -39,7 +40,7 @@ if [ ! -f src/.env ]; then
 fi
 NEW_KEY=""
 grep -q '^APP_KEY=.\+' src/.env || NEW_KEY=1
-URL="http://$HOST"; [ "$PORT" = "80" ] || URL="$URL:$PORT"
+URL="$SCHEME://$HOST"
 sed -i -e 's/^APP_NAME=.*/APP_NAME="ISPU Indonesia 2026"/' -e 's/^APP_ENV=.*/APP_ENV=production/' \
     -e 's/^APP_DEBUG=.*/APP_DEBUG=false/' -e "s#^APP_URL=.*#APP_URL=$URL#" -e 's/^APP_LOCALE=.*/APP_LOCALE=id/' \
     -e 's/^SESSION_DRIVER=.*/SESSION_DRIVER=file/' -e 's/^CACHE_STORE=.*/CACHE_STORE=file/' -e 's/^LOG_LEVEL=.*/LOG_LEVEL=warning/' src/.env
@@ -67,5 +68,5 @@ docker compose exec -T app sh -c "
     php artisan optimize
 "
 
-say "Selesai! Buka: $URL"
+say "Selesai! Buka: $URL/id   (cek langsung di VPS: curl -I http://127.0.0.1:$PORT/id)"
 docker compose ps

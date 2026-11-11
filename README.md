@@ -7,7 +7,7 @@ Laravel 13 + MySQL 8.4 + Nginx, semuanya di Docker. Tidak butuh GPU.
 docker compose up -d --build
 docker compose exec app sh -c "chmod -R 777 storage bootstrap/cache && php artisan migrate --force && php artisan ispu:import"
 ```
-Buka http://localhost:8095 (port diatur di `.env` root: `APP_PORT`).
+Buka http://localhost:8095/id (port diatur di `.env` root: `APP_PORT`).
 
 ## Deploy ke VPS (Ubuntu)
 Pakai paket `ispu-deploy.tar.gz` (berisi kode + CSV, tanpa vendor dan tanpa .env):
@@ -15,7 +15,7 @@ Pakai paket `ispu-deploy.tar.gz` (berisi kode + CSV, tanpa vendor dan tanpa .env
 scp ispu-deploy.tar.gz root@IP-VPS:/root/
 ssh root@IP-VPS
 mkdir -p /opt/ispu && tar -xzf /root/ispu-deploy.tar.gz -C /opt/ispu && cd /opt/ispu
-sudo bash deploy.sh            # port 80; atau: sudo PORT=8095 bash deploy.sh
+sudo bash deploy.sh            # https://polusi.skaladigital.my/id ; atau: sudo PORT=8095 bash deploy.sh
 ```
 `deploy.sh` otomatis memasang Docker (jika belum ada), membuat password database acak,
 mengatur mode production (`APP_DEBUG=false`), lalu build, migrasi, import CSV, dan evaluasi model.
