@@ -2,16 +2,17 @@
 
 namespace App\Http\Controllers;
 
-use App\Support\KnnPredictor;
+use App\Support\MlClient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\ViewErrorBag;
+use RuntimeException;
 
 class PredictController extends Controller
 {
     public function __invoke(Request $request)
     {
-        $features = KnnPredictor::FEATURES;
+        $features = MlClient::FEATURES;
         $input = collect($features)->map(fn ($f) => $f[2])->all();
         $result = null;
 
@@ -30,7 +31,14 @@ class PredictController extends Controller
             if ($v->fails()) {
                 view()->share('errors', (new ViewErrorBag)->put('default', $v->errors()));
             } else {
-                $result = KnnPredictor::fromDatabase()->predict($v->validated());
+                try {
+                    $result = MlClient::predict($v->validated());
+                } catch (RuntimeException $e) {
+                    report($e);
+                    view()->share('errors', (new ViewErrorBag)->put('default', new \Illuminate\Support\MessageBag([
+                        'ml' => 'Model prediksi sedang tidak tersedia. Coba lagi beberapa saat lagi.',
+                    ])));
+                }
             }
         }
 

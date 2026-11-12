@@ -4,7 +4,7 @@
 #   sudo NO_PULL=1 bash deploy.sh             -> tanpa git pull
 #   sudo EMAIL=kamu@mail.com bash deploy.sh   -> sekalian pasang SSL Let's Encrypt (butuh certbot)
 #   sudo PORT=8095 bash deploy.sh             -> paksa port container tertentu
-#   sudo FULL_EVAL=1 bash deploy.sh           -> hitung ulang halaman Evaluasi (5-fold CV, beberapa menit)
+#   sudo FULL_EVAL=1 bash deploy.sh           -> hitung ulang halaman Evaluasi (5-fold CV, service ML Python)
 #   sudo DOMAIN=lain.com SCHEME=http bash deploy.sh
 #
 # Jika port 80 sudah dipakai Nginx di VPS, container dijalankan di 127.0.0.1:8095 dan
@@ -86,10 +86,17 @@ sed -i -e 's/^APP_NAME=.*/APP_NAME="ISPU Indonesia 2026"/' -e 's/^APP_ENV=.*/APP
 
 say "Build & menjalankan container"
 docker compose up -d --build --remove-orphans
+docker compose restart web >/dev/null   # nginx menyimpan IP container app; refresh setelah app dibuat ulang
 
 say "Menunggu MySQL siap"
 for i in $(seq 1 60); do
     docker compose exec -T db mysqladmin ping -h127.0.0.1 --silent >/dev/null 2>&1 && break
+    sleep 3
+done
+
+say "Menunggu service ML siap"
+for i in $(seq 1 40); do
+    docker compose exec -T ml python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" >/dev/null 2>&1 && break
     sleep 3
 done
 

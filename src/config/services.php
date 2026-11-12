@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'ml' => [
+        // Service Python (FastAPI + scikit-learn) di container "ml"
+        'url' => env('ML_URL', 'http://ml:8000'),
+        'timeout' => (int) env('ML_TIMEOUT', 15),
+    ],
+
 ];

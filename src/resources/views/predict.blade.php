@@ -15,6 +15,7 @@
                     @error($key) <small class="err">{{ $message }}</small> @enderror
                 </label>
             @endforeach
+            @error('ml') <p class="err">{{ $message }}</p> @enderror
             <div class="actions">
                 <button type="submit">Prediksi</button>
                 <a class="reset" href="{{ route('predict') }}">Reset</a>
@@ -48,7 +49,7 @@
         <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
         <h3>Tentang model</h3>
         <p style="font-size:14px;color:var(--muted);line-height:1.6">
-            Model <b>k-Nearest Neighbors</b> (k={{ $metrics['k'] ?? 15 }}) ditulis murni dalam PHP dan berjalan di CPU tanpa GPU.
+            Model <b>k-Nearest Neighbors</b> (k={{ $metrics['k'] ?? 15 }}) dilatih dengan <b>Python scikit-learn</b> di service ML terpisah dan berjalan di CPU tanpa GPU.
             Model mencari {{ $metrics['k'] ?? 15 }} observasi paling mirip di dataset, lalu menghitung rata-rata berbobot dari observasi tersebut.
         </p>
         @if ($metrics)

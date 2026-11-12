@@ -2,55 +2,28 @@
 
 namespace App\Console\Commands;
 
-use App\Support\KnnPredictor;
+use App\Support\MlClient;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 class EvaluateKnn extends Command
 {
     protected $signature = 'ispu:evaluate {--k= : Jumlah tetangga (default: k terbaik hasil ispu:evaluate-models)} {--test=1000 : Jumlah data uji}';
 
-    protected $description = 'Uji akurasi model kNN dengan pembagian data latih/uji (hold-out)';
+    protected $description = 'Latih ulang model kNN di service ML Python dan uji akurasinya (hold-out)';
 
     public function handle(): int
     {
-        $rows = DB::table('observations')
-            ->select(array_merge(array_keys(KnnPredictor::FEATURES), ['ispu', 'ispu_category', 'risk_tier', 'ispa_burden']))
-            ->get()->map(fn ($r) => (array) $r)->all();
+        $k = (int) ($this->option('k') ?: MlClient::bestK());
 
-        $k = (int) ($this->option('k') ?: KnnPredictor::bestK());
-        mt_srand(42);
-        shuffle($rows);
-        $test = array_splice($rows, 0, (int) $this->option('test'));
-        $model = (new KnnPredictor($k))->fit($rows);
+        $this->info("Menguji kNN (k=$k) dengan hold-out di service ML...");
+        $result = MlClient::evaluate($k, (int) $this->option('test'));
+        file_put_contents(storage_path('app/knn_metrics.json'), json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
-        $catOk = $tierOk = 0;
-        $ispuErr = $burdenErr = 0;
-        $bar = $this->output->createProgressBar(count($test));
-        foreach ($test as $r) {
-            $p = $model->predict($r);
-            $catOk += $p['category'] === $r['ispu_category'];
-            $tierOk += $p['tier'] === $r['risk_tier'];
-            $ispuErr += abs($p['ispu'] - $r['ispu']);
-            $burdenErr += abs($p['burden'] - $r['ispa_burden']);
-            $bar->advance();
-        }
-        $bar->finish();
-        $n = count($test);
-        $result = [
-            'k' => $k,
-            'train' => count($rows),
-            'test' => $n,
-            'category_accuracy' => round($catOk / $n, 4),
-            'tier_accuracy' => round($tierOk / $n, 4),
-            'ispu_mae' => round($ispuErr / $n, 2),
-            'burden_mae' => round($burdenErr / $n, 3),
-            'evaluated_at' => now()->toDateTimeString(),
-        ];
-        file_put_contents(storage_path('app/knn_metrics.json'), json_encode($result, JSON_PRETTY_PRINT));
+        $this->info('Melatih ulang model prediksi dengan seluruh data...');
+        $trained = MlClient::train($k);
 
-        $this->newLine(2);
-        $this->table(['Metrik', 'Nilai'], collect($result)->map(fn ($v, $k) => [$k, $v])->values()->all());
+        $this->table(['Metrik', 'Nilai'], collect($result)->map(fn ($v, $key) => [$key, $v])->values()->all());
+        $this->line("Model prediksi aktif: k={$trained['k']}, {$trained['rows']} data");
 
         return self::SUCCESS;
     }

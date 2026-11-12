@@ -62,6 +62,7 @@
     </p>
     <p class="muted" style="margin:10px 0 0">
         Dihitung {{ $eval['meta']['evaluated_at'] }} · {{ $eval['meta']['duration_s'] }} detik · nilai k diuji 1–{{ $eval['meta']['kmax'] }} ·
+        {{ $eval['meta']['engine'] ?? 'PHP' }} ·
         hitung ulang: <code>php artisan ispu:evaluate-models</code>
     </p>
 </div>
